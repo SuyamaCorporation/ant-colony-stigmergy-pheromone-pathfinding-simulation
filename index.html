@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アリのコロニー フェロモン経路探索シミュレーション</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  #simCanvas { cursor: crosshair; display: block; }
+  input[type=range] { accent-color: #22c55e; }
+</style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+<div class="max-w-6xl mx-auto px-4 py-4">
+  <h1 class="text-2xl font-bold text-center mb-1 text-green-300">アリのコロニー フェロモン経路探索シミュレーション</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">アリがフェロモンを使って最短経路を探索する様子をリアルタイムで可視化</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+    <!-- Controls -->
+    <div class="lg:col-span-1 space-y-3">
+      <div class="bg-gray-800 rounded-xl p-4 space-y-3">
+        <h2 class="font-semibold text-green-300 border-b border-gray-700 pb-2">パラメータ</h2>
+
+        <div>
+          <label for="numAnts" class="text-sm text-gray-300 flex justify-between">
+            <span>アリの数</span><span id="numAntsVal" class="text-green-400 font-mono">50</span>
+          </label>
+          <input type="range" id="numAnts" min="10" max="200" step="5" value="50" class="w-full mt-1" aria-label="アリの数 (10から200)">
+        </div>
+
+        <div>
+          <label for="evapRate" class="text-sm text-gray-300 flex justify-between">
+            <span>蒸発率</span><span id="evapRateVal" class="text-green-400 font-mono">0.05</span>
+          </label>
+          <input type="range" id="evapRate" min="0.01" max="0.30" step="0.01" value="0.05" class="w-full mt-1" aria-label="フェロモン蒸発率">
+        </div>
+
+        <div>
+          <label for="pheroStrength" class="text-sm text-gray-300 flex justify-between">
+            <span>フェロモン強度</span><span id="pheroStrengthVal" class="text-green-400 font-mono">5</span>
+          </label>
+          <input type="range" id="pheroStrength" min="1" max="10" value="5" class="w-full mt-1" aria-label="フェロモン強度 (1から10)">
+        </div>
+
+        <div>
+          <label for="alphaParam" class="text-sm text-gray-300 flex justify-between">
+            <span>α（フェロモン影響）</span><span id="alphaParamVal" class="text-green-400 font-mono">1.0</span>
+          </label>
+          <input type="range" id="alphaParam" min="0.1" max="5" step="0.1" value="1.0" class="w-full mt-1" aria-label="フェロモン影響度alpha">
+        </div>
+
+        <div>
+          <label for="betaParam" class="text-sm text-gray-300 flex justify-between">
+            <span>β（距離影響）</span><span id="betaParamVal" class="text-green-400 font-mono">2.0</span>
+          </label>
+          <input type="range" id="betaParam" min="0.1" max="5" step="0.1" value="2.0" class="w-full mt-1" aria-label="距離影響度beta">
+        </div>
+      </div>
+
+      <div class="bg-gray-800 rounded-xl p-4 space-y-2">
+        <h2 class="font-semibold text-green-300 border-b border-gray-700 pb-2">操作</h2>
+        <div class="text-xs text-gray-400 space-y-1">
+          <div>左クリック: 餌を配置</div>
+          <div>右クリック: 障害物を配置</div>
+          <div>Shift+右クリック: 障害物を消す</div>
+        </div>
+        <div class="flex gap-2">
+          <button id="btnPlay" class="flex-1 bg-green-700 hover:bg-green-600 text-white font-semibold py-2 px-2 rounded-lg transition text-sm focus:outline-none focus:ring-2 focus:ring-green-400" aria-label="シミュレーション開始/停止">
+            ▶ 開始
+          </button>
+          <button id="btnReset" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-2 rounded-lg transition text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" aria-label="シミュレーションをリセット">
+            ↺ リセット
+          </button>
+        </div>
+        <button id="btnApplyParams" class="w-full bg-blue-700 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg transition text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="パラメータを適用して再起動">
+          パラメータ適用 & 再起動
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div class="bg-gray-800 rounded-xl p-4 space-y-2" role="region" aria-label="シミュレーション統計">
+        <h2 class="font-semibold text-green-300 border-b border-gray-700 pb-2">統計</h2>
+        <div class="text-sm space-y-1">
+          <div class="flex justify-between">
+            <span class="text-gray-400">反復回数</span>
+            <span id="statIter" class="text-white font-mono">0</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">最短経路長</span>
+            <span id="statBest" class="text-yellow-400 font-mono">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">食料到達回数</span>
+            <span id="statFound" class="text-green-400 font-mono">0</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">アリ(探索中)</span>
+            <span id="statSearching" class="text-white font-mono">0</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">アリ(帰巣中)</span>
+            <span id="statReturning" class="text-white font-mono">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="bg-gray-800 rounded-xl p-4">
+        <h2 class="font-semibold text-green-300 border-b border-gray-700 pb-2 mb-2">凡例</h2>
+        <div class="text-xs space-y-1">
+          <div class="flex items-center gap-2"><span class="w-4 h-4 rounded-full bg-blue-500 inline-block"></span> 巣（Nest）</div>
+          <div class="flex items-center gap-2"><span class="w-4 h-4 rounded-full bg-green-500 inline-block"></span> 食料（Food）</div>
+          <div class="flex items-center gap-2"><span class="w-4 h-4 rounded-full bg-red-500 inline-block"></span> アリ（探索）</div>
+          <div class="flex items-center gap-2"><span class="w-4 h-4 rounded-full bg-yellow-400 inline-block"></span> アリ（帰巣）</div>
+          <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-600 inline-block"></span> 障害物</div>
+          <div class="flex items-center gap-2"><span class="w-4 h-2 bg-yellow-300 inline-block"></span> 最短経路</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="lg:col-span-3">
+      <div class="bg-gray-800 rounded-xl p-3">
+        <canvas id="simCanvas" role="img" aria-label="アリのコロニーシミュレーションキャンバス" class="w-full rounded-lg border border-gray-700"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0;
+const CELL = 8; // grid cell size in pixels
+let COLS = 0, ROWS = 0;
+
+// Simulation state
+let pheromones = null; // 2D array
+let obstacles = null;  // 2D boolean array
+let ants = [];
+let nestPos = {x: 0, y: 0};
+let foodPos = {x: 0, y: 0};
+let running = false;
+let animId = null;
+let iteration = 0;
+let foundCount = 0;
+let bestPath = Infinity;
+let bestPathCells = [];
+
+// Parameters
+let NUM_ANTS = 50;
+let EVAP_RATE = 0.05;
+let PHERO_STRENGTH = 5;
+let ALPHA = 1.0;
+let BETA = 2.0;
+
+// Load settings
+const saved = localStorage.getItem('antcolony_settings');
+if (saved) {
+  try {
+    const s = JSON.parse(saved);
+    NUM_ANTS = s.ants||50; EVAP_RATE = s.evap||0.05;
+    PHERO_STRENGTH = s.phero||5; ALPHA = s.alpha||1; BETA = s.beta||2;
+  } catch(e) {}
+}
+
+function saveSettings() {
+  localStorage.setItem('antcolony_settings', JSON.stringify({
+    ants: NUM_ANTS, evap: EVAP_RATE, phero: PHERO_STRENGTH, alpha: ALPHA, beta: BETA
+  }));
+}
+
+function setupCanvas() {
+  const wrapper = canvas.parentElement;
+  W = wrapper.clientWidth - 24;
+  H = Math.round(W * 0.65);
+  canvas.width = W; canvas.height = H;
+  COLS = Math.floor(W / CELL);
+  ROWS = Math.floor(H / CELL);
+  pheromones = Array.from({length: ROWS}, () => new Float32Array(COLS).fill(0.1));
+  obstacles = Array.from({length: ROWS}, () => new Uint8Array(COLS));
+  nestPos = { x: Math.floor(COLS * 0.15), y: Math.floor(ROWS * 0.5) };
+  foodPos = { x: Math.floor(COLS * 0.85), y: Math.floor(ROWS * 0.5) };
+  spawnAnts();
+}
+
+// Ant structure
+function createAnt() {
+  return {
+    x: nestPos.x, y: nestPos.y,
+    state: 'search', // search | return
+    path: [{x: nestPos.x, y: nestPos.y}],
+    pathLength: 0,
+    visitedSet: new Set([`${nestPos.x},${nestPos.y}`])
+  };
+}
+
+function spawnAnts() {
+  ants = Array.from({length: NUM_ANTS}, createAnt);
+}
+
+// Directions: 8 neighbors
+const DIRS = [
+  [-1,-1],[0,-1],[1,-1],
+  [-1,0],        [1,0],
+  [-1,1], [0,1], [1,1]
+];
+
+function getNeighbors(x, y) {
+  return DIRS.map(([dx,dy]) => ({x:x+dx, y:y+dy}))
+    .filter(({x:nx,y:ny}) =>
+      nx>=0 && ny>=0 && nx<COLS && ny<ROWS &&
+      !obstacles[ny][nx]
+    );
+}
+
+function antStep(ant) {
+  if (ant.state === 'search') {
+    // Check if at food
+    if (Math.abs(ant.x - foodPos.x) + Math.abs(ant.y - foodPos.y) <= 1) {
+      ant.state = 'return';
+      ant.pathLength = ant.path.length;
+      foundCount++;
+      if (ant.pathLength < bestPath) {
+        bestPath = ant.pathLength;
+        bestPathCells = [...ant.path];
+      }
+      return;
+    }
+
+    const neighbors = getNeighbors(ant.x, ant.y).filter(n => !ant.visitedSet.has(`${n.x},${n.y}`));
+    if (neighbors.length === 0) {
+      // Dead end, reset
+      ant.x = nestPos.x; ant.y = nestPos.y;
+      ant.path = [{x: nestPos.x, y: nestPos.y}];
+      ant.visitedSet = new Set([`${nestPos.x},${nestPos.y}`]);
+      return;
+    }
+
+    // Probability proportional to pheromone^alpha * heuristic^beta
+    const targetX = foodPos.x, targetY = foodPos.y;
+    const weights = neighbors.map(n => {
+      const ph = Math.pow(pheromones[n.y][n.x] + 0.01, ALPHA);
+      const dist = Math.hypot(n.x - targetX, n.y - targetY) + 1;
+      const eta = Math.pow(1.0 / dist, BETA);
+      return ph * eta;
+    });
+    const total = weights.reduce((a,b) => a+b, 0);
+    let r = Math.random() * total, chosen = neighbors[0];
+    for (let i = 0; i < neighbors.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { chosen = neighbors[i]; break; }
+    }
+    ant.x = chosen.x; ant.y = chosen.y;
+    ant.path.push({x: ant.x, y: ant.y});
+    ant.visitedSet.add(`${ant.x},${ant.y}`);
+
+  } else { // return
+    // Deposit pheromone
+    if (ant.path.length > 0) {
+      const cell = ant.path.pop();
+      pheromones[cell.y][cell.x] += PHERO_STRENGTH / (ant.pathLength + 1);
+      ant.x = cell.x; ant.y = cell.y;
+    } else {
+      // Reached nest, reset
+      ant.x = nestPos.x; ant.y = nestPos.y;
+      ant.state = 'search';
+      ant.path = [{x: nestPos.x, y: nestPos.y}];
+      ant.visitedSet = new Set([`${nestPos.x},${nestPos.y}`]);
+    }
+  }
+}
+
+function evaporate() {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      pheromones[y][x] *= (1 - EVAP_RATE);
+      if (pheromones[y][x] < 0.001) pheromones[y][x] = 0;
+    }
+  }
+}
+
+function render() {
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  // Pheromone heatmap
+  let maxPh = 0.1;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (pheromones[y][x] > maxPh) maxPh = pheromones[y][x];
+    }
+  }
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (obstacles[y][x]) {
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+        continue;
+      }
+      const t = Math.min(pheromones[y][x] / maxPh, 1);
+      if (t > 0.02) {
+        const r = Math.round(t * 100);
+        const g = Math.round(80 + t * 150);
+        const b = Math.round(t * 40);
+        ctx.fillStyle = `rgba(${r},${g},${b},${t * 0.8})`;
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+      }
+    }
+  }
+
+  // Best path highlight
+  if (bestPathCells.length > 1) {
+    ctx.strokeStyle = 'rgba(253,224,71,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bestPathCells[0].x*CELL+CELL/2, bestPathCells[0].y*CELL+CELL/2);
+    for (let i = 1; i < bestPathCells.length; i++) {
+      ctx.lineTo(bestPathCells[i].x*CELL+CELL/2, bestPathCells[i].y*CELL+CELL/2);
+    }
+    ctx.stroke();
+  }
+
+  // Ants
+  let searching = 0, returning = 0;
+  for (const ant of ants) {
+    if (ant.state === 'search') {
+      ctx.fillStyle = '#ef4444';
+      searching++;
+    } else {
+      ctx.fillStyle = '#facc15';
+      returning++;
+    }
+    ctx.beginPath();
+    ctx.arc(ant.x*CELL+CELL/2, ant.y*CELL+CELL/2, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Nest
+  const nx = nestPos.x*CELL+CELL/2, ny = nestPos.y*CELL+CELL/2;
+  ctx.fillStyle = '#3b82f6';
+  ctx.beginPath();
+  ctx.arc(nx, ny, 10, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', nx, ny);
+
+  // Food
+  const fx = foodPos.x*CELL+CELL/2, fy = foodPos.y*CELL+CELL/2;
+  ctx.fillStyle = '#22c55e';
+  ctx.beginPath();
+  ctx.arc(fx, fy, 10, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText('F', fx, fy);
+
+  // Update stats
+  document.getElementById('statIter').textContent = iteration;
+  document.getElementById('statBest').textContent = bestPath === Infinity ? '-' : bestPath;
+  document.getElementById('statFound').textContent = foundCount;
+  document.getElementById('statSearching').textContent = searching;
+  document.getElementById('statReturning').textContent = returning;
+}
+
+function simStep() {
+  evaporate();
+  for (const ant of ants) antStep(ant);
+  iteration++;
+}
+
+let frameCount = 0;
+function loop() {
+  for (let i = 0; i < 3; i++) simStep(); // 3 sim steps per frame
+  render();
+  animId = requestAnimationFrame(loop);
+}
+
+function startSim() {
+  if (!running) {
+    running = true;
+    document.getElementById('btnPlay').textContent = '⏸ 停止';
+    loop();
+  } else {
+    running = false;
+    document.getElementById('btnPlay').textContent = '▶ 開始';
+    cancelAnimationFrame(animId);
+    animId = null;
+  }
+}
+
+function resetSim() {
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+  running = false;
+  document.getElementById('btnPlay').textContent = '▶ 開始';
+  pheromones = Array.from({length: ROWS}, () => new Float32Array(COLS).fill(0.1));
+  iteration = 0; foundCount = 0; bestPath = Infinity; bestPathCells = [];
+  spawnAnts();
+  render();
+}
+
+// Canvas interaction
+function getGridPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width, scaleY = H / rect.height;
+  let cx, cy;
+  if (e.touches) {
+    cx = (e.touches[0].clientX - rect.left) * scaleX;
+    cy = (e.touches[0].clientY - rect.top) * scaleY;
+  } else {
+    cx = (e.clientX - rect.left) * scaleX;
+    cy = (e.clientY - rect.top) * scaleY;
+  }
+  return { x: Math.floor(cx / CELL), y: Math.floor(cy / CELL) };
+}
+
+canvas.addEventListener('click', e => {
+  const pos = getGridPos(e);
+  if (pos.x >= 0 && pos.x < COLS && pos.y >= 0 && pos.y < ROWS) {
+    foodPos = { x: pos.x, y: pos.y };
+    if (!running) render();
+  }
+});
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const pos = getGridPos(e);
+  if (pos.x < 0 || pos.x >= COLS || pos.y < 0 || pos.y >= ROWS) return;
+  if (e.shiftKey) {
+    obstacles[pos.y][pos.x] = 0;
+  } else {
+    obstacles[pos.y][pos.x] = 1;
+  }
+  if (!running) render();
+});
+
+document.getElementById('btnPlay').addEventListener('click', startSim);
+document.getElementById('btnReset').addEventListener('click', resetSim);
+document.getElementById('btnApplyParams').addEventListener('click', () => {
+  NUM_ANTS = parseInt(document.getElementById('numAnts').value);
+  EVAP_RATE = parseFloat(document.getElementById('evapRate').value);
+  PHERO_STRENGTH = parseInt(document.getElementById('pheroStrength').value);
+  ALPHA = parseFloat(document.getElementById('alphaParam').value);
+  BETA = parseFloat(document.getElementById('betaParam').value);
+  saveSettings();
+  resetSim();
+});
+
+// Slider display updates
+[
+  ['numAnts', 'numAntsVal', v=>v],
+  ['evapRate', 'evapRateVal', v=>parseFloat(v).toFixed(2)],
+  ['pheroStrength', 'pheroStrengthVal', v=>v],
+  ['alphaParam', 'alphaParamVal', v=>parseFloat(v).toFixed(1)],
+  ['betaParam', 'betaParamVal', v=>parseFloat(v).toFixed(1)],
+].forEach(([id, valId, fmt]) => {
+  const el = document.getElementById(id);
+  document.getElementById(valId).textContent = fmt(el.value);
+  el.addEventListener('input', () => {
+    document.getElementById(valId).textContent = fmt(el.value);
+  });
+});
+
+// Apply saved values to sliders
+document.getElementById('numAnts').value = NUM_ANTS;
+document.getElementById('evapRate').value = EVAP_RATE;
+document.getElementById('pheroStrength').value = PHERO_STRENGTH;
+document.getElementById('alphaParam').value = ALPHA;
+document.getElementById('betaParam').value = BETA;
+document.getElementById('numAntsVal').textContent = NUM_ANTS;
+document.getElementById('evapRateVal').textContent = EVAP_RATE.toFixed(2);
+document.getElementById('pheroStrengthVal').textContent = PHERO_STRENGTH;
+document.getElementById('alphaParamVal').textContent = ALPHA.toFixed(1);
+document.getElementById('betaParamVal').textContent = BETA.toFixed(1);
+
+// Init
+window.addEventListener('resize', () => {
+  const wasRunning = running;
+  if (animId) { cancelAnimationFrame(animId); animId = null; running = false; }
+  setupCanvas();
+  if (wasRunning) { running = false; startSim(); }
+  else render();
+});
+
+setupCanvas();
+render();
+</script>
+</body>
+</html>
